@@ -9,7 +9,7 @@ function App() {
     const [activePage, setActivePage] = useState("home");
     const {
         project, busyAction, feedback, activity, notifications,
-        selectKiCadProject, openKiCadProject, openProjectFolder, showNewProjectInfo,
+        selectKiCadProject, openKiCadProject, openProjectFolder, saveConfiguration, showNewProjectInfo,
     } = useKiCadProject();
 
     function handleNewProject() {
@@ -48,12 +48,14 @@ function App() {
             <main className="main-content">
                 {activePage === "project" ? (
                     <ProjectPage
+                        key={project?.projectPath || "no-project"}
                         project={project}
                         busyAction={busyAction}
                         feedback={feedback}
                         onSelect={selectKiCadProject}
                         onOpenKiCad={openKiCadProject}
                         onOpenFolder={openProjectFolder}
+                        onSaveConfiguration={saveConfiguration}
                     />
                 ) : (
                     <Dashboard

@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const fs = require("node:fs/promises");
 const path = require("path");
-const { analyzeKiCadProject } = require("./kicad-project.cjs");
+const { analyzeKiCadProject, loadProjectConfiguration, saveProjectConfiguration } = require("./kicad-project.cjs");
 const { hasKiCadFileAssociation } = require("./windows-association.cjs");
 
 let mainWindow;
@@ -42,6 +43,7 @@ function registerProjectHandlers() {
         }
 
         selectedProject = await analyzeKiCadProject(result.filePaths[0]);
+        selectedProject.configuration = await loadProjectConfiguration(selectedProject);
         return { status: "success", project: selectedProject, message: "Proyecto KiCad detectado correctamente." };
     });
 
@@ -62,6 +64,15 @@ function registerProjectHandlers() {
                 : `No se pudo abrir KiCad. Comprueba que esté instalado y asociado a .kicad_pro en Windows. ${error}`);
         }
 
+        project.configuration = await loadProjectConfiguration(project);
+        async function fileData(asset) {
+            if (!asset) return null;
+            const bytes = await fs.readFile(asset.path);
+            return { name: asset.name, data: `data:application/octet-stream;base64,${bytes.toString("base64")}` };
+        }
+        project.configuration.files.edgeCuts = await fileData(project.configuration.files.edgeCuts);
+        project.configuration.files.pth = await fileData(project.configuration.files.pth);
+        project.configuration.files.laserImage = await fileData(project.configuration.files.laserImage);
         selectedProject = project;
         return {
             status: "success",
@@ -72,6 +83,20 @@ function registerProjectHandlers() {
 
     handle("kicad:open-project", () => openSelectedProject(false));
     handle("kicad:open-folder", () => openSelectedProject(true));
+    handle("project:save-configuration", async (event, config) => {
+        if (!selectedProject) throw new Error("Selecciona primero un proyecto KiCad.");
+        const saved = await saveProjectConfiguration(selectedProject, config);
+        selectedProject.configuration = saved;
+        async function fileData(asset) {
+            if (!asset) return null;
+            const bytes = await fs.readFile(asset.path);
+            return { name: asset.name, data: `data:application/octet-stream;base64,${bytes.toString("base64")}` };
+        }
+        selectedProject.configuration.files.edgeCuts = await fileData(saved.files.edgeCuts);
+        selectedProject.configuration.files.pth = await fileData(saved.files.pth);
+        selectedProject.configuration.files.laserImage = await fileData(saved.files.laserImage);
+        return { status: "success", project: selectedProject, message: "Configuración del proyecto guardada correctamente." };
+    });
 }
 
 function createWindow() {

@@ -58,6 +58,20 @@ function useKiCadProject() {
         }
     }
 
+    async function saveConfiguration(configuration) {
+        if (typeof window.electronAPI?.saveProjectConfiguration !== "function") {
+            return { status: "error", message: "Esta acción requiere la aplicación de escritorio de PCB Flow Dashboard." };
+        }
+        try {
+            const result = await window.electronAPI.saveProjectConfiguration(configuration);
+            if (result.status === "success") setProject(result.project);
+            else if (result.status === "error") reportError(result.message);
+            return result;
+        } catch {
+            return { status: "error", message: "No se pudo guardar la configuración mediante Electron." };
+        }
+    }
+
     function showNewProjectInfo() {
         setFeedback({
             type: "neutral",
@@ -70,6 +84,7 @@ function useKiCadProject() {
         selectKiCadProject: () => runProjectAction("selectKiCadProject"),
         openKiCadProject: () => runProjectAction("openKiCadProject"),
         openProjectFolder: () => runProjectAction("openProjectFolder"),
+        saveConfiguration,
         showNewProjectInfo,
     };
 }

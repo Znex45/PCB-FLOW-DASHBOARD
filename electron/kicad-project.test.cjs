@@ -4,7 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
-const { analyzeKiCadProject } = require("./kicad-project.cjs");
+const { analyzeKiCadProject, loadProjectConfiguration, saveProjectConfiguration } = require("./kicad-project.cjs");
 const { hasKiCadFileAssociation } = require("./windows-association.cjs");
 
 async function createFixture(t) {
@@ -53,6 +53,28 @@ test("rejects wrong extensions, missing files and directories masquerading as pr
     await assert.rejects(analyzeKiCadProject(falseProject), /no es un archivo/);
 });
 
+test("saves and restores project settings and all fabrication files without modifying KiCad files", async (t) => {
+    const { directory, projectPath } = await createFixture(t);
+    const project = await analyzeKiCadProject(projectPath);
+    const asData = (name, content) => ({ name, data: `data:application/octet-stream;base64,${Buffer.from(content).toString("base64")}` });
+    const config = {
+        size: "10 × 15 cm",
+        files: {
+            edgeCuts: asData("board.grb", "gerber-data"),
+            pth: asData("holes.drl", "excellon-data"),
+            laserImage: asData("laser_recortado.png", "png-data"),
+        },
+    };
+    await saveProjectConfiguration(project, config);
+    const restored = await loadProjectConfiguration(project);
+    assert.equal(restored.size, config.size);
+    assert.equal(await fs.readFile(restored.files.edgeCuts.path, "utf8"), "gerber-data");
+    assert.equal(await fs.readFile(restored.files.pth.path, "utf8"), "excellon-data");
+    assert.equal(await fs.readFile(restored.files.laserImage.path, "utf8"), "png-data");
+    assert.equal(await fs.readFile(projectPath, "utf8"), "{}");
+    assert.deepEqual(await fs.readdir(path.join(directory, ".pcb-flow-assets")).then((names) => names.length), 3);
+});
+
 async function createMainHarness() {
     const handlers = new Map();
     const openedPaths = [];
@@ -78,8 +100,10 @@ async function createMainHarness() {
     vm.runInNewContext(source, {
         require: (name) => name === "electron" ? electron
             : name === "path" ? path
+                : name === "node:fs/promises" ? fs
+                    : name === "node:crypto" ? require("node:crypto")
                 : name === "./windows-association.cjs" ? { hasKiCadFileAssociation: async () => control.hasAssociation }
-                    : { analyzeKiCadProject },
+                    : { analyzeKiCadProject, loadProjectConfiguration, saveProjectConfiguration },
         __dirname,
         process: { platform: "win32" },
         URL,
@@ -144,7 +168,7 @@ test("IPC rejects foreign windows and navigation outside the Vite origin", async
     assert.equal((await handlers.get("kicad:select-project")(event)).message, "Solicitud de proyecto no autorizada.");
 });
 
-test("preload exposes only the three fixed IPC operations and the existing version", async () => {
+test("preload exposes only the four fixed IPC operations and the existing version", async () => {
     let exposed;
     const calls = [];
     const source = await fs.readFile(path.join(__dirname, "preload.cjs"), "utf8");
@@ -154,9 +178,10 @@ test("preload exposes only the three fixed IPC operations and the existing versi
             ipcRenderer: { invoke: (channel) => { calls.push(channel); } },
         }),
     });
-    assert.deepEqual(Object.keys(exposed), ["version", "selectKiCadProject", "openKiCadProject", "openProjectFolder"]);
+    assert.deepEqual(Object.keys(exposed), ["version", "selectKiCadProject", "openKiCadProject", "openProjectFolder", "saveProjectConfiguration"]);
     exposed.selectKiCadProject();
     exposed.openKiCadProject("ignored");
     exposed.openProjectFolder("ignored");
-    assert.deepEqual(calls, ["kicad:select-project", "kicad:open-project", "kicad:open-folder"]);
+    exposed.saveProjectConfiguration({ size: "10 × 10 cm" });
+    assert.deepEqual(calls, ["kicad:select-project", "kicad:open-project", "kicad:open-folder", "project:save-configuration"]);
 });
