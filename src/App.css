@@ -696,6 +696,96 @@ button {
     outline-offset: 3px;
 }
 
+.project-setup-card {
+    margin-bottom: 18px;
+}
+
+.project-setup-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 20px;
+}
+
+.project-setup-heading .section-title,
+.project-inputs .section-title {
+    margin: 0 0 7px;
+}
+
+.project-config-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.project-field,
+.project-file-field {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 9px;
+    min-width: 0;
+    color: #263f58;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.project-field select,
+.project-file-field input[type="file"] {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid #cbdce9;
+    border-radius: 8px;
+    padding: 9px 11px;
+    background: #fbfdff;
+    color: #263f58;
+    font: inherit;
+}
+
+.project-field select:focus-visible,
+.project-file-field input:focus-visible {
+    outline: 3px solid #2474e8;
+    outline-offset: 2px;
+}
+
+.project-inputs {
+    margin-top: 22px;
+    padding-top: 20px;
+    border-top: 1px solid #edf2f6;
+}
+
+.project-inputs-description {
+    margin-bottom: 16px;
+}
+
+.project-file-field > span small,
+.project-file-field > small {
+    color: #8293a3;
+    font-size: 11px;
+    font-weight: 400;
+}
+
+.project-file-field > span small {
+    display: block;
+    margin-top: 4px;
+}
+
+.laser-file-field {
+    max-width: 620px;
+}
+
+.laser-file-field .project-button:disabled {
+    opacity: 0.7;
+}
+
+.project-prototype-note {
+    margin: 18px 0 0;
+    color: #718398;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
 .project-message {
     border: 1px solid #dce6ef;
     border-radius: 10px;
@@ -826,6 +916,11 @@ button {
 }
 
 @media (max-width: 1200px) {
+    .project-setup-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
     .kicad-selection-card {
         align-items: flex-start;
         flex-direction: column;

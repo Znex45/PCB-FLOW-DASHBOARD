@@ -1,16 +1,43 @@
-# React + Vite
+# PCB Flow Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicación de escritorio para centralizar el flujo de fabricación de PCB desde
+un proyecto KiCad hasta la preparación y el seguimiento de la fabricación en
+una CNC 3018 PRO.
 
-Currently, two official plugins are available:
+## Estado actual
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+La aplicación usa Electron, React y Vite. Actualmente permite seleccionar un
+proyecto KiCad (.kicad_pro), detectar archivos asociados en su carpeta y abrir
+el proyecto o su carpeta mediante Windows. Las integraciones con FlatCAM,
+Candle, LaserGRBL y la CNC todavía no están implementadas.
 
-## React Compiler
+El Dashboard muestra estados reales: no hay proyecto, actividad, alertas ni
+conexión CNC inventados al iniciar.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Modos de fabricación previstos
 
-## Expanding the ESLint configuration
+Cada proyecto deberá conservar uno de estos modos:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **Taladro:** KiCad → preparación PCB → FlatCAM → G-code → Candle → CNC.
+- **Láser:** KiCad → preparación láser → archivos para láser → LaserGRBL → CNC.
+
+La selección de modo y el tamaño de PCB todavía no tienen interfaz ni
+persistencia. Los requisitos, límites y orden de desarrollo están definidos en
+[el plan técnico](docs/requisitos-y-plan-tecnico.md).
+
+## Desarrollo local
+
+    npm install
+    npm run desktop
+
+Comandos disponibles:
+
+    npm run lint
+    npm run build
+    npm run desktop
+
+## Seguridad Electron
+
+La ventana mantiene contextIsolation activado y nodeIntegration desactivado.
+React no tiene acceso directo a Node.js: las operaciones del sistema pasan por
+preload e IPC.
