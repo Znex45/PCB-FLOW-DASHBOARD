@@ -60,7 +60,7 @@ test("saves and restores project settings and all fabrication files without modi
     const config = {
         size: "10 × 15 cm",
         files: {
-            edgeCuts: asData("board.grb", "gerber-data"),
+            edgeCuts: asData("board.gbr", "gerber-data"),
             pth: asData("holes.drl", "excellon-data"),
             laserImage: asData("laser_recortado.png", "png-data"),
         },

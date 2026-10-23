@@ -70,7 +70,7 @@ async function saveProjectConfiguration(project, config) {
     }
 
     const [edgeCuts, pth, laserImage] = await Promise.all([
-        storeAsset(config.files?.edgeCuts, ".grb"),
+        storeAsset(config.files?.edgeCuts, ".gbr"),
         storeAsset(config.files?.pth, ".drl"),
         storeAsset(config.files?.laserImage, ".png"),
     ]);

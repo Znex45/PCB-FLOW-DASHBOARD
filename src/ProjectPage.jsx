@@ -36,7 +36,7 @@ function ProjectPage({ project, busyAction, feedback, onSelect, onOpenKiCad, onO
         const extension = file.name.split(".").pop().toLowerCase();
         if (!extensions.includes(extension)) {
             setter(null);
-            if (setter === setEdgeCutsFile) setEdgeCutsMessage("Formato incorrecto. Selecciona un archivo .grb.");
+            if (setter === setEdgeCutsFile) setEdgeCutsMessage("Formato incorrecto. Selecciona un archivo .gbr.");
             if (setter === setPthFile) setPthMessage("Formato incorrecto. Selecciona un archivo .drl.");
             if (setter === setLaserImage) setLaserMessage("Formato incorrecto. Selecciona una imagen PNG.");
             return;
@@ -168,8 +168,8 @@ function ProjectPage({ project, busyAction, feedback, onSelect, onOpenKiCad, onO
                     <p className="kicad-description project-inputs-description">Carga los insumos de ambas rutas en este proyecto. Al comenzar la fabricación seleccionarás cuál ejecutar.</p>
                     <div className="project-config-grid">
                             <label className="project-file-field">
-                                <span>Edge Cuts <small>Gerber .grb</small></span>
-                                <input type="file" accept=".grb" onChange={(event) => acceptFile(event.target.files?.[0], ["grb"], setEdgeCutsFile)} />
+                                <span>Edge Cuts <small>Gerber .gbr</small></span>
+                                <input type="file" accept=".gbr" onChange={(event) => acceptFile(event.target.files?.[0], ["gbr"], setEdgeCutsFile)} />
                                 <small>{edgeCutsFile?.name || "Selecciona el contorno de la placa"}</small>
                                 {edgeCutsMessage && <small className={edgeCutsMessage.startsWith("Formato") ? "file-feedback error" : "file-feedback"} role="status">{edgeCutsMessage}</small>}
                             </label>

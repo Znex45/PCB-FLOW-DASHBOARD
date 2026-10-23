@@ -33,7 +33,7 @@ mostrará información real de una CNC 3018 PRO.
 | Archivo KiCad | Ruta y nombre del archivo kicad_pro | Disponible | 3.3 |
 | Archivos asociados | kicad_pcb, kicad_sch, Gerber/Gerbers | Detección básica | 3.3.2 |
 | Tamaño de PCB | 10×10, 10×15, 10×20, 15×15 o 15×20 cm | Pendiente | 3.3 |
-| Insumos de fabricación | Edge Cuts .grb, PTH .drl y PNG de KiCad | Selección visual por modo; se ajusta a insumos conjuntos | 3.3 y 3.3.2 |
+| Insumos de fabricación | Edge Cuts .gbr, PTH .drl y PNG de KiCad | Selección visual por modo; se ajusta a insumos conjuntos | 3.3 y 3.3.2 |
 | Estado y eventos | Evidencia por etapa, fecha y error | Solo memoria de sesión | 3.3.5 |
 
 El tamaño no debe inferirse del nombre de un archivo. Debe seleccionarse y
@@ -47,7 +47,7 @@ según el modo elegido y no se deducen únicamente del proyecto KiCad:
 
 | Modo | Archivo requerido | Propósito | Estado de implementación |
 |---|---|---|---|
-| Taladro | Archivo .grb de Edge Cuts | Delimitar el contorno de la PCB para FlatCAM | Pendiente |
+| Taladro | Archivo .gbr de Edge Cuts | Delimitar el contorno de la PCB para FlatCAM | Pendiente |
 | Taladro | Archivo Excellon .drl de PTH | Definir los agujeros metalizados para FlatCAM | Pendiente |
 | Láser | Imagen PNG exportada desde KiCad | Preparar el trabajo para LaserGRBL | Pendiente |
 
@@ -69,7 +69,7 @@ comportamiento esperado del recorte con quienes operarán LaserGRBL.
     ↓
     Procesamiento y validación de archivos PCB
     ↓
-    Selección de Edge Cuts .grb y PTH Excellon .drl
+    Selección de Edge Cuts .gbr y PTH Excellon .drl
     ↓
     FlatCAM
     ↓
@@ -109,7 +109,7 @@ invalidar los estados posteriores.
   disponibles.
 - Abrir proyecto o carpeta usando las asociaciones de Windows, sin ruta fija a
   KiCad.
-- Para Taladro, solicitar y conservar por separado el archivo .grb de Edge
+- Para Taladro, solicitar y conservar por separado el archivo .gbr de Edge
   Cuts y el archivo .drl Excellon de PTH.
 - Para Láser, solicitar y conservar un PNG exportado desde KiCad.
 
@@ -141,7 +141,7 @@ La actividad estará preparada para cierre cuando:
 3. Se confirme el conjunto cerrado de tamaños de PCB.
 4. Se defina quién controla el puerto COM en cada ruta: PCB Flow, Candle o
    LaserGRBL.
-5. Se registren los archivos de entrada confirmados: Edge Cuts .grb y PTH
+5. Se registren los archivos de entrada confirmados: Edge Cuts .gbr y PTH
    Excellon .drl para Taladro, y PNG exportado desde KiCad para Láser.
 6. Se definan los archivos de salida aceptados y las reglas de recorte del PNG.
 
