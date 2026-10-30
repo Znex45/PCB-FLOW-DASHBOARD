@@ -34,11 +34,14 @@ mostrará información real de una CNC 3018 PRO.
 | Archivos asociados | kicad_pcb, kicad_sch, Gerber/Gerbers | Detección básica | 3.3.2 |
 | Tamaño de PCB | 10×10, 10×15, 10×20, 15×15 o 15×20 cm | Pendiente | 3.3 |
 | Insumos de fabricación | Edge Cuts .gbr, PTH .drl y PNG de KiCad | Selección visual por modo; se ajusta a insumos conjuntos | 3.3 y 3.3.2 |
-| Estado y eventos | Evidencia por etapa, fecha y error | Solo memoria de sesión | 3.3.5 |
+| Estado y eventos | Corridas, ruta, fecha, archivos y resultado | Corridas básicas persistidas en `.pcb-flow.json`; sin ejecución externa | 3.3.5 |
 
 El tamaño no debe inferirse del nombre de un archivo. Debe seleccionarse y
 almacenarse en el proyecto. Taladro/Láser se elige por corrida, al iniciar el
 trabajo de CNC, y no limita los archivos que se pueden preparar en el proyecto.
+Cada corrida preparada registra ruta, fecha, archivos de entrada y estado. El
+estado `Preparada` confirma la validación de los insumos, pero no que se haya
+abierto una herramienta ni que la CNC haya recibido una orden.
 
 ## Entradas confirmadas en pruebas de prototipo
 

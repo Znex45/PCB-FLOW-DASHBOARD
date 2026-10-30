@@ -64,11 +64,38 @@ function useKiCadProject() {
         }
         try {
             const result = await window.electronAPI.saveProjectConfiguration(configuration);
-            if (result.status === "success") setProject(result.project);
+            if (result.status === "success" && result.project) setProject(result.project);
             else if (result.status === "error") reportError(result.message);
             return result;
         } catch {
             return { status: "error", message: "No se pudo guardar la configuración mediante Electron." };
+        }
+    }
+
+    async function startFabricationRun(mode) {
+        if (typeof window.electronAPI?.startFabricationRun !== "function") {
+            return { status: "error", message: "Esta acción requiere la aplicación de escritorio de PCB Flow Dashboard." };
+        }
+        try {
+            const result = await window.electronAPI.startFabricationRun(mode);
+            if (result.status === "success" && result.project) setProject(result.project);
+            else if (result.status === "error") reportError(result.message);
+            return result;
+        } catch {
+            return { status: "error", message: "No se pudo registrar la corrida mediante Electron." };
+        }
+    }
+
+    async function openFabricationTool(mode) {
+        if (typeof window.electronAPI?.openFabricationTool !== "function") {
+            return { status: "error", message: "Esta acción requiere la aplicación de escritorio de PCB Flow Dashboard." };
+        }
+        try {
+            const result = await window.electronAPI.openFabricationTool(mode);
+            if (result.status === "error") reportError(result.message);
+            return result;
+        } catch {
+            return { status: "error", message: "No se pudo abrir la herramienta mediante Electron." };
         }
     }
 
@@ -85,6 +112,8 @@ function useKiCadProject() {
         openKiCadProject: () => runProjectAction("openKiCadProject"),
         openProjectFolder: () => runProjectAction("openProjectFolder"),
         saveConfiguration,
+        startFabricationRun,
+        openFabricationTool,
         showNewProjectInfo,
     };
 }

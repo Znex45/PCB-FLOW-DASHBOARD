@@ -9,7 +9,7 @@ function App() {
     const [activePage, setActivePage] = useState("home");
     const {
         project, busyAction, feedback, activity, notifications,
-        selectKiCadProject, openKiCadProject, openProjectFolder, saveConfiguration, showNewProjectInfo,
+        selectKiCadProject, openKiCadProject, openProjectFolder, saveConfiguration, startFabricationRun, openFabricationTool, showNewProjectInfo,
     } = useKiCadProject();
 
     function handleNewProject() {
@@ -56,6 +56,8 @@ function App() {
                         onOpenKiCad={openKiCadProject}
                         onOpenFolder={openProjectFolder}
                         onSaveConfiguration={saveConfiguration}
+                        onStartFabrication={startFabricationRun}
+                        onOpenFabricationTool={openFabricationTool}
                     />
                 ) : (
                     <Dashboard
@@ -74,6 +76,7 @@ function App() {
             </main>
         </div>
     );
+
 }
 
 export default App;

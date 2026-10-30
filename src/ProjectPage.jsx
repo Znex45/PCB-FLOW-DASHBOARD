@@ -2,18 +2,31 @@ import { useEffect, useRef, useState } from "react";
 
 const boardSizes = ["10 × 10 cm", "10 × 15 cm", "10 × 20 cm", "15 × 15 cm", "15 × 20 cm"];
 
-function ProjectPage({ project, busyAction, feedback, onSelect, onOpenKiCad, onOpenFolder, onSaveConfiguration }) {
+function restoredFile(asset, type) {
+    if (!asset) return null;
+    const binary = window.atob(asset.data);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    return new File([bytes], asset.name, { type });
+}
+
+function ProjectPage({ project, busyAction, feedback, onSelect, onOpenKiCad, onOpenFolder, onSaveConfiguration, onStartFabrication, onOpenFabricationTool }) {
     const configuration = project?.configuration || {};
+    const initialLaserImage = restoredFile(configuration.files?.laserImage, "image/png");
     const [size, setSize] = useState(() => boardSizes.includes(configuration.size) ? configuration.size : boardSizes[0]);
-    const [edgeCutsFile, setEdgeCutsFile] = useState(() => configuration.files?.edgeCuts ? new File([configuration.files.edgeCuts.data], configuration.files.edgeCuts.name, { type: "application/octet-stream" }) : null);
-    const [pthFile, setPthFile] = useState(() => configuration.files?.pth ? new File([configuration.files.pth.data], configuration.files.pth.name, { type: "application/octet-stream" }) : null);
-    const [laserImage, setLaserImage] = useState(() => configuration.files?.laserImage ? new File([configuration.files.laserImage.data], configuration.files.laserImage.name, { type: "image/png" }) : null);
+    const [selectedRunMode, setSelectedRunMode] = useState(() => configuration.fabricationRun?.mode || "");
+    const [runMessage, setRunMessage] = useState("");
+    const [toolMessage, setToolMessage] = useState("");
+    const [openingTool, setOpeningTool] = useState(false);
+    const [edgeCutsFile, setEdgeCutsFile] = useState(() => restoredFile(configuration.files?.edgeCuts, "application/octet-stream"));
+    const [pthFile, setPthFile] = useState(() => restoredFile(configuration.files?.pth, "application/octet-stream"));
+    const [laserImage, setLaserImage] = useState(initialLaserImage);
     const [edgeCutsMessage, setEdgeCutsMessage] = useState("");
     const [pthMessage, setPthMessage] = useState("");
     const [laserMessage, setLaserMessage] = useState("");
     const [saveMessage, setSaveMessage] = useState("");
     const [isSaving, setIsSaving] = useState(false);
-    const [imageUrl, setImageUrl] = useState("");
+    const [isStartingRun, setIsStartingRun] = useState(false);
+    const [imageUrl, setImageUrl] = useState(() => initialLaserImage ? URL.createObjectURL(initialLaserImage) : "");
     const [imageDimensions, setImageDimensions] = useState(null);
     const [crop, setCrop] = useState(null);
     const [cropMessage, setCropMessage] = useState("");
@@ -77,6 +90,22 @@ function ProjectPage({ project, busyAction, feedback, onSelect, onOpenKiCad, onO
         } finally {
             setIsSaving(false);
         }
+    }
+
+    async function startSelectedRun() {
+        if (!selectedRunMode) return;
+        setIsStartingRun(true);
+        const result = await onStartFabrication(selectedRunMode);
+        setRunMessage(result?.message || "No se recibió confirmación del registro de la corrida.");
+        setIsStartingRun(false);
+    }
+
+    async function openSelectedTool() {
+        if (!selectedRunMode) return;
+        setOpeningTool(true);
+        const result = await onOpenFabricationTool(selectedRunMode);
+        setToolMessage(result?.message || "No se recibió confirmación de la herramienta.");
+        setOpeningTool(false);
     }
 
     function pointerPosition(event) {
@@ -208,7 +237,7 @@ function ProjectPage({ project, busyAction, feedback, onSelect, onOpenKiCad, onO
                     </button>
                     <span className="project-prototype-note">Se guarda junto al proyecto KiCad, sin modificar sus archivos.</span>
                 </div>
-                {saveMessage && <div className="project-message success" role="status">{saveMessage}</div>}
+                {saveMessage && <div className={`project-message ${saveMessage.includes("No se pudo") || saveMessage.includes("faltan") ? "error" : "success"}`} role={saveMessage.includes("No se pudo") || saveMessage.includes("faltan") ? "alert" : "status"}>{saveMessage}</div>}
             </section>
 
             {!project ? (
@@ -231,6 +260,45 @@ function ProjectPage({ project, busyAction, feedback, onSelect, onOpenKiCad, onO
                         </div>
                     </section>
                     <div className="kicad-details-grid">
+                        <section className="card fabrication-run-card">
+                            <h3 className="section-title">Iniciar corrida de fabricación</h3>
+                            <p className="kicad-description">Selecciona una ruta para este trabajo. Ambas usan el mismo proyecto KiCad y la CNC aún no se activa desde esta pantalla.</p>
+                            <div className="run-mode-options">
+                                <label className={`run-mode-option ${project.configuration?.validation?.edgeCuts?.valid && project.configuration?.validation?.pth?.valid ? "available" : "unavailable"}`}>
+                                    <input type="radio" name="fabrication-mode" value="taladro" checked={selectedRunMode === "taladro"} onChange={() => setSelectedRunMode("taladro")} disabled={!project.configuration?.validation?.edgeCuts?.valid || !project.configuration?.validation?.pth?.valid} />
+                                    <span><strong>Taladro CNC</strong><small>{project.configuration?.validation?.edgeCuts?.valid && project.configuration?.validation?.pth?.valid ? "Edge Cuts .gbr y PTH .drl validados" : "Requiere Edge Cuts .gbr y PTH .drl válidos"}</small></span>
+                                </label>
+                                <label className={`run-mode-option ${project.configuration?.validation?.laserImage?.valid ? "available" : "unavailable"}`}>
+                                    <input type="radio" name="fabrication-mode" value="laser" checked={selectedRunMode === "laser"} onChange={() => setSelectedRunMode("laser")} disabled={!project.configuration?.validation?.laserImage?.valid} />
+                                    <span><strong>Láser</strong><small>{project.configuration?.validation?.laserImage?.valid ? `${project.configuration.files.laserImage.name} validado` : "Requiere imagen PNG válida"}</small></span>
+                                </label>
+                            </div>
+                            <ul className="input-validation-list">
+                                {[["Edge Cuts", project.configuration?.validation?.edgeCuts], ["PTH", project.configuration?.validation?.pth], ["Imagen Láser", project.configuration?.validation?.laserImage]].map(([label, result]) => (
+                                    <li key={label} className={result?.valid ? "found" : "pending"}><span>{result?.valid ? "✓" : "○"}</span><strong>{label}:</strong> {result?.message || "Aún no guardado para validar"}</li>
+                                ))}
+                            </ul>
+                            <button className="project-button primary" type="button" onClick={startSelectedRun} disabled={!selectedRunMode || isStartingRun}>{isStartingRun ? "Registrando corrida…" : "Preparar corrida"}</button>
+                            {runMessage && <div className={`project-message ${runMessage.includes("No se puede") ? "error" : "neutral"}`} role="status">{runMessage}</div>}
+                            <button className="project-button" type="button" onClick={openSelectedTool} disabled={!selectedRunMode || openingTool}>{openingTool ? "Abriendo herramienta…" : selectedRunMode === "taladro" ? "Abrir FlatCAM" : "Abrir LaserGRBL"}</button>
+                            {toolMessage && <div className={`project-message ${toolMessage.includes("cancelada") ? "neutral" : toolMessage.includes("No se pudo") || toolMessage.includes("Selecciona") ? "error" : "neutral"}`} role="status">{toolMessage}</div>}
+                        </section>
+                        <section className="card fabrication-history-card">
+                            <h3 className="section-title">Historial de corridas</h3>
+                            {!project.configuration?.runs?.length ? (
+                                <p className="kicad-description">Todavía no hay corridas registradas en este proyecto.</p>
+                            ) : (
+                                <ol className="fabrication-history-list">
+                                    {project.configuration.runs.map((run) => (
+                                        <li key={run.id}>
+                                            <div className="run-history-heading"><strong>{run.mode === "taladro" ? "Taladro CNC" : "Láser"}</strong><span className="offline-badge">{run.status}</span><time dateTime={run.createdAt}>{new Date(run.createdAt).toLocaleString("es-CO")}</time></div>
+                                            <p>{run.files.join(" · ")}</p>
+                                            <small>{run.message}</small>
+                                        </li>
+                                    ))}
+                                </ol>
+                            )}
+                        </section>
                         <section className="card">
                             <h3 className="section-title">Estado del proyecto</h3>
                             <ul className="project-checklist">{checklist.map(({ label, found }) => <li key={label} className={found ? "found" : "pending"}><span className="checklist-symbol" aria-hidden="true">{found ? "✓" : "○"}</span><span>{label}</span><small>{found ? "Encontrado" : "No encontrado"}</small></li>)}</ul>

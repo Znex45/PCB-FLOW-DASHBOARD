@@ -12,6 +12,53 @@ function projectConfigPaths(project) {
     };
 }
 
+function validateFabricationAsset(asset, expectedExtension, label) {
+    if (!asset || typeof asset.data !== "string" || !asset.data.startsWith("data:")) {
+        throw new Error(`Selecciona el archivo requerido para ${label}.`);
+    }
+    if (path.extname(asset.name || "").toLowerCase() !== expectedExtension) {
+        throw new Error(`${label}: se requiere un archivo ${expectedExtension}.`);
+    }
+    const comma = asset.data.indexOf(",");
+    if (comma < 0 || !asset.data.slice(0, comma).endsWith(";base64")) {
+        throw new Error(`${label}: no se pudo leer el archivo seleccionado.`);
+    }
+    const payload = asset.data.slice(comma + 1);
+    const buffer = Buffer.from(payload, "base64");
+    if (!buffer.length || buffer.toString("base64").replace(/=+$/, "") !== payload.replace(/=+$/, "")) {
+        throw new Error(`${label}: el archivo está vacío o tiene datos dañados.`);
+    }
+
+    if (expectedExtension === ".png") {
+        const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+        if (buffer.length < 24 || !buffer.subarray(0, 8).equals(signature) || buffer.toString("ascii", 12, 16) !== "IHDR") {
+            throw new Error(`${label}: el archivo tiene extensión PNG, pero su contenido no parece ser una imagen PNG válida.`);
+        }
+        return buffer;
+    }
+
+    const text = buffer.toString("latin1");
+    if (expectedExtension === ".gbr" && (!/%FSLAX\d+Y\d+\*/i.test(text) || !/D\d+\*/.test(text) || !/X[+-]?\d+Y[+-]?\d+D0[12]\*/i.test(text))) {
+        throw new Error(`${label}: no se reconoció la estructura básica de un Gerber.`);
+    }
+    if (expectedExtension === ".drl" && (!/^M48\s*$/im.test(text) || !/^(?:INCH|METRIC)/im.test(text) || !/^T\d+/im.test(text))) {
+        throw new Error(`${label}: no se reconoció la cabecera básica de un archivo Excellon.`);
+    }
+    return buffer;
+}
+
+async function validateStoredAsset(asset, extension, label) {
+    if (!asset) return { valid: false, message: `Falta el archivo requerido para ${label}.` };
+    try {
+        const bytes = await fs.readFile(asset.path);
+        const data = `data:application/octet-stream;base64,${bytes.toString("base64")}`;
+        validateFabricationAsset({ name: asset.name, data }, extension, label);
+        return { valid: true, message: `${asset.name}: contenido reconocido.` };
+    } catch (error) {
+        return { valid: false, message: error.message };
+    }
+}
+
 async function loadProjectConfiguration(project) {
     const { configPath } = projectConfigPaths(project);
     try {
@@ -37,12 +84,29 @@ async function loadProjectConfiguration(project) {
         const [edgeCuts, pth, laserImage] = await Promise.all([
             safeAsset(data.files?.edgeCuts), safeAsset(data.files?.pth), safeAsset(data.files?.laserImage),
         ]);
+        const [edgeCutsValidation, pthValidation, laserImageValidation] = await Promise.all([
+            validateStoredAsset(edgeCuts, ".gbr", "Edge Cuts"),
+            validateStoredAsset(pth, ".drl", "PTH"),
+            validateStoredAsset(laserImage, ".png", "Imagen láser"),
+        ]);
         return {
             size: typeof data.size === "string" ? data.size : "10 × 10 cm",
+            fabricationRun: data.fabricationRun || null,
+            runs: Array.isArray(data.runs) ? data.runs.slice(0, 100) : [],
             files: { edgeCuts, pth, laserImage },
+            validation: { edgeCuts: edgeCutsValidation, pth: pthValidation, laserImage: laserImageValidation },
         };
     } catch (error) {
-        if (error.code === "ENOENT") return { size: "10 × 10 cm", files: { edgeCuts: null, pth: null, laserImage: null } };
+        if (error.code === "ENOENT") return {
+            size: "10 × 10 cm",
+            runs: [],
+            files: { edgeCuts: null, pth: null, laserImage: null },
+            validation: {
+                edgeCuts: { valid: false, message: "Falta el archivo requerido para Edge Cuts." },
+                pth: { valid: false, message: "Falta el archivo requerido para PTH." },
+                laserImage: { valid: false, message: "Falta la imagen PNG para Láser." },
+            },
+        };
         throw error;
     }
 }
@@ -53,15 +117,8 @@ async function saveProjectConfiguration(project, config) {
 
     async function storeAsset(asset, extension) {
         if (!asset) return null;
-        if (typeof asset.data !== "string" || !asset.data.startsWith("data:")) {
-            throw new Error("Uno de los archivos no contiene datos válidos para guardar.");
-        }
-        const comma = asset.data.indexOf(",");
-        if (comma < 0 || !asset.data.slice(0, comma).endsWith(";base64")) {
-            throw new Error("El formato interno de uno de los archivos no es válido.");
-        }
-        const buffer = Buffer.from(asset.data.slice(comma + 1), "base64");
-        if (!buffer.length) throw new Error("No se puede guardar un archivo vacío.");
+        const labels = { ".gbr": "Edge Cuts", ".drl": "PTH", ".png": "Imagen láser" };
+        const buffer = validateFabricationAsset(asset, extension, labels[extension]);
         const safeStem = path.basename(asset.name || "archivo", path.extname(asset.name || "archivo"))
             .replace(/[^\p{L}\p{N}._-]+/gu, "_").slice(0, 80) || "archivo";
         const name = `${safeStem}-${crypto.randomUUID()}${extension}`;
@@ -74,10 +131,19 @@ async function saveProjectConfiguration(project, config) {
         storeAsset(config.files?.pth, ".drl"),
         storeAsset(config.files?.laserImage, ".png"),
     ]);
+    let previousRuns = [];
+    try {
+        const previousDocument = JSON.parse(await fs.readFile(configPath, "utf8"));
+        previousRuns = Array.isArray(previousDocument.runs) ? previousDocument.runs.slice(0, 100) : [];
+    } catch (error) {
+        if (error.code !== "ENOENT") throw new Error("No se pudo conservar el historial existente. Revisa .pcb-flow.json antes de guardar.", { cause: error });
+    }
     const document = {
         version: 1,
         projectPath: project.projectPath,
         size: config.size,
+        fabricationRun: config.fabricationRun || null,
+        runs: previousRuns,
         files: {
             edgeCuts: edgeCuts && { storedName: edgeCuts, originalName: config.files.edgeCuts.name },
             pth: pth && { storedName: pth, originalName: config.files.pth.name },
@@ -94,6 +160,37 @@ async function saveProjectConfiguration(project, config) {
         throw error;
     }
     return loadProjectConfiguration(project);
+}
+
+async function recordFabricationRun(project, mode) {
+    if (!["taladro", "laser"].includes(mode)) throw new Error("Selecciona una ruta válida: Taladro o Láser.");
+    const configuration = await loadProjectConfiguration(project);
+    const requirements = mode === "taladro"
+        ? [[configuration.files.edgeCuts, configuration.validation.edgeCuts, "Edge Cuts .gbr"], [configuration.files.pth, configuration.validation.pth, "PTH .drl"]]
+        : [[configuration.files.laserImage, configuration.validation.laserImage, "Imagen PNG"]];
+    const missing = requirements.find(([file, validation]) => !file || !validation?.valid);
+    if (missing) throw new Error(`${mode === "taladro" ? "Taladro" : "Láser"} no se puede preparar: ${missing[2]} falta o no pasó la validación. Guarda archivos válidos e inténtalo de nuevo.`);
+
+    const { configPath } = projectConfigPaths(project);
+    const document = JSON.parse(await fs.readFile(configPath, "utf8"));
+    const run = {
+        id: crypto.randomUUID(),
+        mode,
+        status: "Preparada",
+        createdAt: new Date().toISOString(),
+        files: requirements.map(([file]) => file.name),
+        message: "Insumos guardados y validados. La CNC no recibió ninguna orden.",
+    };
+    document.runs = [run, ...(Array.isArray(document.runs) ? document.runs : [])].slice(0, 100);
+    const temporaryPath = `${configPath}.${crypto.randomUUID()}.tmp`;
+    try {
+        await fs.writeFile(temporaryPath, `${JSON.stringify(document, null, 2)}\n`, { flag: "wx" });
+        await fs.rename(temporaryPath, configPath);
+    } catch (error) {
+        await fs.rm(temporaryPath, { force: true }).catch(() => {});
+        throw error;
+    }
+    return { run, configuration: await loadProjectConfiguration(project) };
 }
 
 async function analyzeKiCadProject(filePath) {
@@ -139,4 +236,4 @@ async function analyzeKiCadProject(filePath) {
     };
 }
 
-module.exports = { analyzeKiCadProject, loadProjectConfiguration, saveProjectConfiguration };
+module.exports = { analyzeKiCadProject, loadProjectConfiguration, saveProjectConfiguration, validateFabricationAsset, recordFabricationRun };

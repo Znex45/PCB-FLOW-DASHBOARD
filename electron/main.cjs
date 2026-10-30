@@ -1,11 +1,98 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("path");
-const { analyzeKiCadProject, loadProjectConfiguration, saveProjectConfiguration } = require("./kicad-project.cjs");
+const { spawn } = require("node:child_process");
+const { analyzeKiCadProject, loadProjectConfiguration, saveProjectConfiguration, recordFabricationRun } = require("./kicad-project.cjs");
 const { hasKiCadFileAssociation } = require("./windows-association.cjs");
 
 let mainWindow;
 let selectedProject = null;
+
+const toolSettingsPath = () => path.join(app.getPath("userData"), "fabrication-tools.json");
+
+async function readToolSettings() {
+    try {
+        return JSON.parse(await fs.readFile(toolSettingsPath(), "utf8"));
+    } catch (error) {
+        if (error.code === "ENOENT") return {};
+        throw new Error("No se pudo leer la configuración de herramientas. Revisa el archivo local de preferencias.", { cause: error });
+    }
+}
+
+async function saveToolPath(mode, executablePath) {
+    const settings = await readToolSettings();
+    settings[mode] = executablePath;
+    const filePath = toolSettingsPath();
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+}
+
+async function openFabricationTool(mode) {
+    const tools = {
+        taladro: { name: "FlatCAM", title: "Seleccionar ejecutable de FlatCAM" },
+        laser: { name: "LaserGRBL", title: "Seleccionar ejecutable de LaserGRBL" },
+    };
+    const tool = tools[mode];
+    if (!tool) throw new Error("Selecciona una ruta válida: Taladro o Láser.");
+
+    const settings = await readToolSettings();
+    let executablePath = settings[mode];
+    if (executablePath) {
+        try {
+            const stat = await fs.stat(executablePath);
+            if (!stat.isFile() || path.extname(executablePath).toLowerCase() !== ".exe") executablePath = null;
+        } catch {
+            executablePath = null;
+        }
+    }
+
+    if (!executablePath) {
+        const result = await dialog.showOpenDialog(mainWindow, {
+            title: tool.title,
+            buttonLabel: `Abrir ${tool.name}`,
+            filters: [{ name: "Aplicación de Windows (.exe)", extensions: ["exe"] }],
+            properties: ["openFile"],
+        });
+        if (result.canceled || !result.filePaths.length) {
+            return { status: "cancelled", message: `Selección de ${tool.name} cancelada.` };
+        }
+        executablePath = path.resolve(result.filePaths[0]);
+        if (path.extname(executablePath).toLowerCase() !== ".exe") {
+            throw new Error(`Selecciona el ejecutable .exe de ${tool.name}.`);
+        }
+        const stat = await fs.stat(executablePath);
+        if (!stat.isFile()) throw new Error(`El ejecutable de ${tool.name} no es un archivo válido.`);
+        await saveToolPath(mode, executablePath);
+    }
+
+    const child = spawn(executablePath, [], { detached: true, stdio: "ignore", windowsHide: false });
+    child.once("error", () => {});
+    child.unref();
+    return {
+        status: "success",
+        message: `${tool.name} se inició. PCB Flow aún no le ha enviado archivos ni órdenes a la CNC.`,
+    };
+}
+
+async function configurationForRenderer(configuration) {
+    async function fileData(asset) {
+        if (!asset) return null;
+        const bytes = await fs.readFile(asset.path);
+        return { name: asset.name, data: bytes.toString("base64") };
+    }
+    const [edgeCuts, pth, laserImage] = await Promise.all([
+        fileData(configuration.files.edgeCuts),
+        fileData(configuration.files.pth),
+        fileData(configuration.files.laserImage),
+    ]);
+    return {
+        size: configuration.size,
+        fabricationRun: configuration.fabricationRun || null,
+        runs: configuration.runs || [],
+        files: { edgeCuts, pth, laserImage },
+        validation: configuration.validation,
+    };
+}
 
 function registerProjectHandlers() {
     function handle(channel, operation) {
@@ -44,6 +131,7 @@ function registerProjectHandlers() {
 
         selectedProject = await analyzeKiCadProject(result.filePaths[0]);
         selectedProject.configuration = await loadProjectConfiguration(selectedProject);
+        selectedProject.configuration = await configurationForRenderer(selectedProject.configuration);
         return { status: "success", project: selectedProject, message: "Proyecto KiCad detectado correctamente." };
     });
 
@@ -65,14 +153,7 @@ function registerProjectHandlers() {
         }
 
         project.configuration = await loadProjectConfiguration(project);
-        async function fileData(asset) {
-            if (!asset) return null;
-            const bytes = await fs.readFile(asset.path);
-            return { name: asset.name, data: `data:application/octet-stream;base64,${bytes.toString("base64")}` };
-        }
-        project.configuration.files.edgeCuts = await fileData(project.configuration.files.edgeCuts);
-        project.configuration.files.pth = await fileData(project.configuration.files.pth);
-        project.configuration.files.laserImage = await fileData(project.configuration.files.laserImage);
+        project.configuration = await configurationForRenderer(project.configuration);
         selectedProject = project;
         return {
             status: "success",
@@ -83,19 +164,50 @@ function registerProjectHandlers() {
 
     handle("kicad:open-project", () => openSelectedProject(false));
     handle("kicad:open-folder", () => openSelectedProject(true));
-    handle("project:save-configuration", async (event, config) => {
-        if (!selectedProject) throw new Error("Selecciona primero un proyecto KiCad.");
-        const saved = await saveProjectConfiguration(selectedProject, config);
-        selectedProject.configuration = saved;
-        async function fileData(asset) {
-            if (!asset) return null;
-            const bytes = await fs.readFile(asset.path);
-            return { name: asset.name, data: `data:application/octet-stream;base64,${bytes.toString("base64")}` };
+    ipcMain.handle("tools:open-fabrication", async (event, mode) => {
+        try {
+            if (!mainWindow || event.sender !== mainWindow.webContents
+                || event.senderFrame !== mainWindow.webContents.mainFrame
+                || new URL(event.senderFrame.url).origin !== "http://localhost:5173") {
+                return { status: "error", message: "Solicitud de herramienta no autorizada." };
+            }
+            return await openFabricationTool(mode);
+        } catch (error) {
+            return { status: "error", message: error.message || "No se pudo abrir la herramienta externa." };
         }
-        selectedProject.configuration.files.edgeCuts = await fileData(saved.files.edgeCuts);
-        selectedProject.configuration.files.pth = await fileData(saved.files.pth);
-        selectedProject.configuration.files.laserImage = await fileData(saved.files.laserImage);
-        return { status: "success", project: selectedProject, message: "Configuración del proyecto guardada correctamente." };
+    });
+    ipcMain.handle("project:save-configuration", async (event, config) => {
+        try {
+            if (!mainWindow || event.sender !== mainWindow.webContents
+                || event.senderFrame !== mainWindow.webContents.mainFrame
+                || new URL(event.senderFrame.url).origin !== "http://localhost:5173") {
+                return { status: "error", message: "Solicitud de proyecto no autorizada." };
+            }
+            if (!selectedProject) throw new Error("Selecciona primero un proyecto KiCad.");
+            const saved = await saveProjectConfiguration(selectedProject, config);
+            selectedProject.configuration = await configurationForRenderer(saved);
+            return { status: "success", project: selectedProject, message: "Configuración del proyecto guardada correctamente." };
+        } catch (error) {
+            const message = error.code === "EACCES" || error.code === "EPERM"
+                ? "No se pudo guardar en la carpeta del proyecto. Comprueba los permisos de escritura."
+                : error.message || "No se pudo guardar la configuración del proyecto.";
+            return { status: "error", message };
+        }
+    });
+    ipcMain.handle("project:start-run", async (event, mode) => {
+        try {
+            if (!mainWindow || event.sender !== mainWindow.webContents
+                || event.senderFrame !== mainWindow.webContents.mainFrame
+                || new URL(event.senderFrame.url).origin !== "http://localhost:5173") {
+                return { status: "error", message: "Solicitud de proyecto no autorizada." };
+            }
+            if (!selectedProject) throw new Error("Selecciona primero un proyecto KiCad.");
+            const { run, configuration } = await recordFabricationRun(selectedProject, mode);
+            selectedProject.configuration = await configurationForRenderer(configuration);
+            return { status: "success", project: selectedProject, run, message: `Corrida de ${mode === "taladro" ? "Taladro" : "Láser"} registrada como Preparada. La CNC no recibió ninguna orden.` };
+        } catch (error) {
+            return { status: "error", message: error.message || "No se pudo registrar la corrida." };
+        }
     });
 }
 
